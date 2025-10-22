@@ -1,0 +1,113 @@
+// деление с(х) на g(x), просто просите нейронку исправить часть divisor, чтобы делить разные хуйни
+
+# Алфавит GF(32)
+A = [1,2,4,8,16,27,13,26,15,30,7,14,28,3,6,12,24,11,22,23,21,17,25,9,18,31,5,10,20,19,29]
+
+# Таблица логарифмов
+LOG_A = [None] * 32
+for i in range(0, len(A)):
+    LOG_A[A[i]] = i
+
+def poly_to_str_exp(poly):
+    """Представляет полином в экспоненциальном виде"""
+    terms = []
+    for j in range(len(poly)):
+        if poly[j] != 0:
+            power = len(poly) - j - 1
+            terms.append(f"a^{LOG_A[poly[j]]}x^{power}")
+    return " + ".join(terms)
+
+# ===== ИСПРАВЛЕННЫЕ ДАННЫЕ =====
+# Делимое: c'(x) с правильными коэффициентами
+divisor = [0] * 31
+divisor[0] = A[3]   # a^3 x^30
+divisor[1] = A[0]   # a^0 x^29  
+divisor[2] = A[27]  # a^27 x^28
+divisor[3] = A[19]  # a^19 x^27
+divisor[4] = A[14]  # a^14 x^26
+divisor[5] = A[13]  # a^13 x^25
+divisor[6] = A[0]   # a^0 x^24
+divisor[15] = A[25] # a^25 x^15
+divisor[21] = A[17] # a^17 x^9
+divisor[25] = A[6]  # a^6 x^5
+divisor[27] = A[17] # a^17 x^3
+divisor[28] = A[7]  # a^7 x^2
+divisor[29] = A[12] # a^12 x^1
+divisor[30] = A[12] # a^12 x^0
+
+# Делитель: g(x)
+dividend = [1, A[8], A[14], A[13], A[10]]  # x^4 + a^8 x^3 + a^14 x^2 + a^13 x + a^10
+
+result = [0] * (len(divisor) - (len(dividend) - 1))
+
+# Показываем начальное состояние
+current_poly = []
+for k in range(len(divisor)):
+    if divisor[k] != 0:
+        power = len(divisor) - k - 1
+        current_poly.append(f"a^{LOG_A[divisor[k]]}x^{power}")
+print(" + ".join(current_poly))
+
+for i in range(0, len(divisor) - (len(dividend) - 1)):
+    if divisor[i] == 0:
+        result[i] = 0
+        continue
+        
+    # Вычисляем множитель
+    multiplier = divisor[i]
+    result[i] = multiplier
+    shift = len(divisor) - (len(dividend)) - i
+    
+    print(f"домножаем делитель на a^{LOG_A[multiplier]}x^{shift}, вычитаем")
+    
+    # Формируем полином для вычитания
+    subtract_poly = [0] * len(dividend)
+    for j in range(len(dividend)):
+        if dividend[j] != 0:
+            coef_log = (LOG_A[dividend[j]] + LOG_A[multiplier]) % 31
+            subtract_poly[j] = A[coef_log]
+    
+    # Выводим вычитаемый полином
+    subtract_terms = []
+    for j in range(len(subtract_poly)):
+        if subtract_poly[j] != 0:
+            power = len(subtract_poly) - j - 1 + shift
+            subtract_terms.append(f"a^{LOG_A[subtract_poly[j]]}x^{power}")
+    print(" + ".join(subtract_terms))
+    
+    # Выполняем вычитание
+    for j in range(len(dividend)):
+        if dividend[j] != 0:
+            coef_log = (LOG_A[dividend[j]] + LOG_A[multiplier]) % 31
+            divisor[i + j] = divisor[i + j] ^ A[coef_log]
+    
+    # Выводим только ненулевые коэффициенты текущего остатка
+    current_remainder = []
+    for k in range(len(divisor)):
+        if divisor[k] != 0:
+            power = len(divisor) - k - 1
+            current_remainder.append(f"a^{LOG_A[divisor[k]]}x^{power}")
+    if current_remainder:
+        print(" + ".join(current_remainder))
+    else:
+        print("0")
+    print()
+
+print("Готово")
+
+# Остаток
+remainder = divisor[-4:]
+remainder_terms = []
+for k in range(len(remainder)):
+    if remainder[k] != 0:
+        power = len(remainder) - k - 1
+        remainder_terms.append(f"a^{LOG_A[remainder[k]]}x^{power}")
+print("Остаток:", " + ".join(remainder_terms))
+
+# Частное
+quotient_terms = []
+for i in range(len(result)):
+    if result[i] != 0:
+        power = len(result) - i - 1
+        quotient_terms.append(f"a^{LOG_A[result[i]]}x^{power}")
+print("Частное:", " + ".join(quotient_terms))
