@@ -1,0 +1,105 @@
+# Алфавит GF(32)
+A = [1,2,4,8,16,27,13,26,15,30,7,14,28,3,6,12,24,11,22,23,21,17,25,9,18,31,5,10,20,19,29]
+
+# Таблица логарифмов
+LOG_A = [None] * 32
+for i in range(0, len(A)):
+    LOG_A[A[i]] = i
+
+def gf_mult(a, b):
+    """Умножение в GF(32)"""
+    if a == 0 or b == 0:
+        return 0
+    return A[(LOG_A[a] + LOG_A[b]) % 31]
+
+def gf_add(a, b):
+    """Сложение в GF(32)"""
+    return a ^ b
+
+def gf_inverse(a):
+    """Обратный элемент в GF(32)"""
+    if a == 0:
+        return 0
+    return A[31 - LOG_A[a]]
+
+def print_matrix(M, label):
+    """Вывод матрицы с меткой"""
+    print(f"{label}:")
+    print(f"[ a^{LOG_A[M[0][0]]}  a^{LOG_A[M[0][1]]} ]  [ a^{LOG_A[M[0][2]]}  a^{LOG_A[M[0][3]]} ]")
+    print(f"[ a^{LOG_A[M[1][0]]}  a^{LOG_A[M[1][1]]} ]  [ a^{LOG_A[M[1][2]]}  a^{LOG_A[M[1][3]]} ]")
+    print()
+
+def gaussian_elimination():
+    """Приведение матрицы к единичному виду методом Гаусса"""
+    print("ПРИВЕДЕНИЕ МАТРИЦЫ К ЕДИНИЧНОМУ ВИДУ")
+    print("=" * 50)
+    
+    # Исходная расширенная матрица [M | I]
+    M = [
+        [A[27], A[5],  A[0], 0],    # [S1, S0, 1, 0]
+        [A[28], A[27], 0,    A[0]]  # [S2, S1, 0, 1]
+    ]
+    
+    print("Исходная матрица [M | I]:")
+    print_matrix(M, "M")
+    
+    # Шаг 1: Делаем M[0][0] = 1
+    if M[0][0] != A[0]:
+        multiplier = gf_inverse(M[0][0])
+        print(f"Шаг 1: Домножаем строку 0 на a^{LOG_A[multiplier]}")
+        for j in range(4):
+            M[0][j] = gf_mult(M[0][j], multiplier)
+        print_matrix(M, "После шага 1")
+    
+    # Шаг 2: Обнуляем M[1][0]
+    if M[1][0] != 0:
+        multiplier = M[1][0]
+        print(f"Шаг 2: Вычитаем из строки 1 строку 0, умноженную на a^{LOG_A[multiplier]}")
+        for j in range(4):
+            M[1][j] = gf_add(M[1][j], gf_mult(multiplier, M[0][j]))
+        print_matrix(M, "После шага 2")
+    
+    # Шаг 3: Делаем M[1][1] = 1
+    if M[1][1] != A[0]:
+        multiplier = gf_inverse(M[1][1])
+        print(f"Шаг 3: Домножаем строку 1 на a^{LOG_A[multiplier]}")
+        for j in range(4):
+            M[1][j] = gf_mult(M[1][j], multiplier)
+        print_matrix(M, "После шага 3")
+    
+    # Шаг 4: Обнуляем M[0][1]
+    if M[0][1] != 0:
+        multiplier = M[0][1]
+        print(f"Шаг 4: Вычитаем из строки 0 строку 1, умноженную на a^{LOG_A[multiplier]}")
+        for j in range(4):
+            M[0][j] = gf_add(M[0][j], gf_mult(multiplier, M[1][j]))
+        print_matrix(M, "После шага 4")
+    
+    # Проверяем результат
+    print("ФИНАЛЬНЫЙ РЕЗУЛЬТАТ:")
+    print("Левая часть (должна быть единичной матрицей):")
+    print(f"[ a^{LOG_A[M[0][0]]}  a^{LOG_A[M[0][1]]} ]")
+    print(f"[ a^{LOG_A[M[1][0]]}  a^{LOG_A[M[1][1]]} ]")
+    
+    print("\nПравая часть (обратная матрица M^(-1)):")
+    print(f"[ a^{LOG_A[M[0][2]]}  a^{LOG_A[M[0][3]]} ]")
+    print(f"[ a^{LOG_A[M[1][2]]}  a^{LOG_A[M[1][3]]} ]")
+    
+    # Проверяем, что левая часть стала единичной матрицей
+    is_identity = (M[0][0] == A[0] and M[0][1] == 0 and 
+                   M[1][0] == 0 and M[1][1] == A[0])
+    
+    print(f"\nПроверка единичной матрицы: {is_identity}")
+    
+    if is_identity:
+        print("✓ Преобразование выполнено успешно!")
+        print(f"\nОБРАТНАЯ МАТРИЦА M^(-1):")
+        print(f"[ a^{LOG_A[M[0][2]]}  a^{LOG_A[M[0][3]]} ]")
+        print(f"[ a^{LOG_A[M[1][2]]}  a^{LOG_A[M[1][3]]} ]")
+    else:
+        print("✗ Ошибка в преобразовании!")
+    
+    return [[M[0][2], M[0][3]], [M[1][2], M[1][3]]]
+
+# Запускаем вычисление
+M_inv = gaussian_elimination()
