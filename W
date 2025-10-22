@@ -1,0 +1,158 @@
+// проверка W=L*S
+
+# Алфавит GF(32)
+A = [1,2,4,8,16,27,13,26,15,30,7,14,28,3,6,12,24,11,22,23,21,17,25,9,18,31,5,10,20,19,29]
+
+# Таблица логарифмов
+LOG_A = [None] * 32
+for i in range(0, len(A)):
+    LOG_A[A[i]] = i
+
+def gf_mult(a, b):
+    """Умножение в GF(32)"""
+    if a == 0 or b == 0:
+        return 0
+    return A[(LOG_A[a] + LOG_A[b]) % 31]
+
+def gf_add(a, b):
+    """Сложение в GF(32)"""
+    return a ^ b
+
+def poly_mult(L_coeffs, S_coeffs):
+    """Умножение полиномов L(x) и S(x)"""
+    # Степени полиномов
+    deg_L = len(L_coeffs) - 1
+    deg_S = len(S_coeffs) - 1
+    deg_result = deg_L + deg_S
+    
+    # Инициализация результата
+    result = [0] * (deg_result + 1)
+    
+    print("УМНОЖЕНИЕ ПОЛИНОМОВ:")
+    print(f"L(x) = {poly_to_str(L_coeffs)}")
+    print(f"S(x) = {poly_to_str(S_coeffs)}")
+    print()
+    
+    # Умножение каждого члена L(x) на каждый член S(x)
+    step = 1
+    for i in range(len(L_coeffs)):
+        if L_coeffs[i] != 0:
+            L_power = len(L_coeffs) - 1 - i
+            for j in range(len(S_coeffs)):
+                if S_coeffs[j] != 0:
+                    S_power = len(S_coeffs) - 1 - j
+                    result_power = L_power + S_power
+                    
+                    product = gf_mult(L_coeffs[i], S_coeffs[j])
+                    
+                    print(f"Шаг {step}: L(x^{L_power}) * S(x^{S_power})")
+                    print(f"  a^{LOG_A[L_coeffs[i]]} * a^{LOG_A[S_coeffs[j]]} = a^{LOG_A[product]}")
+                    print(f"  Добавляем a^{LOG_A[product]}x^{result_power}")
+                    
+                    result[deg_result - result_power] = gf_add(result[deg_result - result_power], product)
+                    print(f"  Текущий результат: {poly_to_str(result)}")
+                    print()
+                    step += 1
+    
+    # Убираем нулевые старшие коэффициенты
+    while len(result) > 0 and result[0] == 0:
+        result.pop(0)
+    
+    return result
+
+def poly_to_str(coeffs):
+    """Представление полинома в виде строки"""
+    if not coeffs:
+        return "0"
+    
+    terms = []
+    power = len(coeffs) - 1
+    for coeff in coeffs:
+        if coeff != 0:
+            if power == 0:
+                terms.append(f"a^{LOG_A[coeff]}")
+            else:
+                terms.append(f"a^{LOG_A[coeff]}x^{power}")
+        power -= 1
+    
+    return " + ".join(terms) if terms else "0"
+
+def calculate_W():
+    """Вычисление W(x) = L(x) * S(x)"""
+    print("ВЫЧИСЛЕНИЕ W(x) = L(x) * S(x)")
+    print("=" * 60)
+    
+    # Коэффициенты L(x) = a^3 x^2 + a^9 x + a^0
+    L_coeffs = [A[3], A[9], A[0]]  # a^3, a^9, a^0
+    
+    # Коэффициенты S(x) = a^11 x^3 + a^27 x^2 + a^9 x + a^5
+    S_coeffs = [A[11], A[27], A[9], A[5]]  # a^11, a^27, a^9, a^5
+    
+    # Умножаем полиномы
+    W_coeffs = poly_mult(L_coeffs, S_coeffs)
+    
+    print("=" * 60)
+    print("ФИНАЛЬНЫЙ РЕЗУЛЬТАТ:")
+    print(f"W(x) = {poly_to_str(W_coeffs)}")
+    
+    # Проверка по членам (как в вашем ручном расчете)
+    print("\nПРОВЕРКА ПО ЧЛЕНАМ:")
+    
+    # Члены от L(x^2) * S(x)
+    term1 = gf_mult(A[3], A[11])  # a^3 * a^11 = a^14 (но у вас a^6?)
+    term2 = gf_mult(A[3], A[27])  # a^3 * a^27 = a^30
+    term3 = gf_mult(A[3], A[9])   # a^3 * a^9 = a^12
+    term4 = gf_mult(A[3], A[5])   # a^3 * a^5 = a^8
+    
+    print(f"L(x^2)*S(x): a^3*(a^11 x^3 + a^27 x^2 + a^9 x + a^5)")
+    print(f"  = a^{LOG_A[term1]}x^5 + a^{LOG_A[term2]}x^4 + a^{LOG_A[term3]}x^3 + a^{LOG_A[term4]}x^2")
+    
+    # Члены от L(x^1) * S(x)
+    term5 = gf_mult(A[9], A[11])  # a^9 * a^11 = a^20
+    term6 = gf_mult(A[9], A[27])  # a^9 * a^27 = a^5
+    term7 = gf_mult(A[9], A[9])   # a^9 * a^9 = a^18
+    term8 = gf_mult(A[9], A[5])   # a^9 * a^5 = a^14
+    
+    print(f"L(x^1)*S(x): a^9*(a^11 x^3 + a^27 x^2 + a^9 x + a^5)")
+    print(f"  = a^{LOG_A[term5]}x^4 + a^{LOG_A[term6]}x^3 + a^{LOG_A[term7]}x^2 + a^{LOG_A[term8]}x^1")
+    
+    # Члены от L(x^0) * S(x)
+    term9 = gf_mult(A[0], A[11])  # a^0 * a^11 = a^11
+    term10 = gf_mult(A[0], A[27]) # a^0 * a^27 = a^27
+    term11 = gf_mult(A[0], A[9])  # a^0 * a^9 = a^9
+    term12 = gf_mult(A[0], A[5])  # a^0 * a^5 = a^5
+    
+    print(f"L(x^0)*S(x): a^0*(a^11 x^3 + a^27 x^2 + a^9 x + a^5)")
+    print(f"  = a^{LOG_A[term9]}x^3 + a^{LOG_A[term10]}x^2 + a^{LOG_A[term11]}x^1 + a^{LOG_A[term12]}x^0")
+    
+    # Суммируем коэффициенты при одинаковых степенях
+    print(f"\nСУММИРОВАНИЕ:")
+    
+    # x^5: term1
+    x5 = term1
+    print(f"x^5: a^{LOG_A[x5]}")
+    
+    # x^4: term2 + term5
+    x4 = gf_add(term2, term5)
+    print(f"x^4: a^{LOG_A[term2]} + a^{LOG_A[term5]} = a^{LOG_A[x4]}")
+    
+    # x^3: term3 + term6 + term9
+    x3 = gf_add(gf_add(term3, term6), term9)
+    print(f"x^3: a^{LOG_A[term3]} + a^{LOG_A[term6]} + a^{LOG_A[term9]} = a^{LOG_A[x3]}")
+    
+    # x^2: term4 + term7 + term10
+    x2 = gf_add(gf_add(term4, term7), term10)
+    print(f"x^2: a^{LOG_A[term4]} + a^{LOG_A[term7]} + a^{LOG_A[term10]} = a^{LOG_A[x2]}")
+    
+    # x^1: term8 + term11
+    x1 = gf_add(term8, term11)
+    print(f"x^1: a^{LOG_A[term8]} + a^{LOG_A[term11]} = a^{LOG_A[x1]}")
+    
+    # x^0: term12
+    x0 = term12
+    print(f"x^0: a^{LOG_A[x0]}")
+    
+    print(f"\nИТОГ: W(x) = a^{LOG_A[x5]}x^5 + a^{LOG_A[x4]}x^4 + a^{LOG_A[x3]}x^3 + a^{LOG_A[x2]}x^2 + a^{LOG_A[x1]}x^1 + a^{LOG_A[x0]}")
+
+# Запускаем вычисление
+calculate_W()
