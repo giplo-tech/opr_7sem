@@ -1,5 +1,3 @@
-//искатель Л
-
 # Алфавит GF(32)
 A = [1,2,4,8,16,27,13,26,15,30,7,14,28,3,6,12,24,11,22,23,21,17,25,9,18,31,5,10,20,19,29]
 
@@ -8,69 +6,52 @@ LOG_A = [None] * 32
 for i in range(0, len(A)):
     LOG_A[A[i]] = i
 
+def gf_add(a, b):
+    """Сложение в GF(32) через XOR"""
+    return a ^ b
+
 def gf_mult(a, b):
     """Умножение в GF(32)"""
     if a == 0 or b == 0:
         return 0
     return A[(LOG_A[a] + LOG_A[b]) % 31]
 
-def gf_add(a, b):
-    """Сложение в GF(32)"""
-    return a ^ b
-
-def gf_power(a, n):
-    """Возведение a в степень n в GF(32)"""
-    if a == 0:
-        return 0
-    if n == 0:
-        return 1
-    return A[(LOG_A[a] * n) % 31]
-
-def evaluate_polynomial(coeffs, x):
-    """Вычисление значения полинома в точке x"""
-    result = 0
-    power = len(coeffs) - 1
-    for coeff in coeffs:
-        if coeff != 0:
-            term = gf_mult(coeff, gf_power(x, power))
-            result = gf_add(result, term)
-        power -= 1
-    return result
-
 def calculate_L_values():
-    """Вычисление всех значений L(a^i) для полинома L(x) = a^17 x^2 + a^2 x + a^0"""
-    print("ВЫЧИСЛЕНИЕ КОРНЕЙ L(x) = a^17 x^2 + a^2 x + a^0")
+    """Вычисление всех значений L(a^i) для полинома L(x) = a^29 x^2 + a^4 x + a^0"""
+    print("ВЫЧИСЛЕНИЕ КОРНЕЙ L(x) = a^29 x^2 + a^4 x + a^0")
     print("=" * 70)
     
-    # Коэффициенты L(x) = a^17 x^2 + a^2 x + a^0
-    L_coeffs = [A[17], A[2], A[0]]
+    # Коэффициенты L(x) = a^29 x^2 + a^4 x + a^0
+    L_coeffs = [A[29], A[4], A[0]]
     
     roots = []
     
     for i in range(31):
-        x = A[i]  # x = a^i
+        # Вычисляем L(a^i) = a^29 * (a^i)^2 + a^4 * (a^i) + a^0
+        # = a^29 * a^(2i) + a^4 * a^i + a^0
+        # = a^(29 + 2i) + a^(4 + i) + a^0
         
-        # Вычисляем L(x) = a^17 * x^2 + a^2 * x + a^0
-        term1 = gf_mult(L_coeffs[0], gf_power(x, 2))  # a^17 * x^2
-        term2 = gf_mult(L_coeffs[1], gf_power(x, 1))  # a^2 * x
-        term3 = L_coeffs[2]                           # a^0
+        term1_power = (29 + 2 * i) % 31
+        term2_power = (4 + i) % 31
+        term3_power = 0
         
-        # Вычисляем степени для отображения
-        term1_power = (17 + 2 * i) % 31
-        term2_power = (2 + i) % 31
+        term1_val = A[term1_power]
+        term2_val = A[term2_power]
+        term3_val = A[0]  # a^0 = 1
         
-        # Суммируем
-        sum1 = gf_add(term1, term2)
-        final_value = gf_add(sum1, term3)
+        # Суммируем все члены
+        sum1 = gf_add(term1_val, term2_val)
+        final_value = gf_add(sum1, term3_val)
+        final_power = LOG_A[final_value] if final_value != 0 else None
         
         # Форматируем вывод как в вашем примере
-        print(f"L(a^{i:2}) = a^17 a^{2*i:2} + a^2 a^{i:2} + a^0 = ", end="")
+        print(f"L(a^{i:2}) = a^29 a^{2*i:2} + a^4 a^{i:2} + a^0 = ", end="")
         
         if final_value == 0:
             print(f"0 ← корень")
             roots.append(i)
         else:
-            print(f"a^{LOG_A[final_value]:2}")
+            print(f"a^{final_power:2}")
     
     print("\n" + "=" * 70)
     print("НАЙДЕННЫЕ КОРНИ:")
@@ -78,8 +59,14 @@ def calculate_L_values():
         for root in roots:
             print(f"a^{root} является корнем")
         
-        print(f"\nПозиции ошибок: {roots}")
-        print("Это означает, что ошибки находятся на позициях:", [f"x^{root}" for root in roots])
+        print(f"\nПозиции ошибок (обратные элементы):")
+        error_positions = []
+        for root in roots:
+            error_pos = (31 - root) % 31
+            error_positions.append(error_pos)
+            print(f"  Корень a^{root} → позиция ошибки x^{error_pos}")
+        
+        print(f"\nОшибки находятся на позициях: {error_positions}")
     else:
         print("Корни не найдены")
     
@@ -92,6 +79,9 @@ roots = calculate_L_values()
 print("\n" + "=" * 70)
 print("ПРОВЕРКА КОРНЕЙ:")
 for root in roots:
-    x = A[root]
-    value = evaluate_polynomial([A[17], A[2], A[0]], x)
+    # Вычисляем L(a^root) напрямую
+    term1 = gf_mult(A[29], A[(2 * root) % 31])  # a^29 * a^(2*root)
+    term2 = gf_mult(A[4], A[root])              # a^4 * a^root
+    term3 = A[0]                                # a^0
+    value = gf_add(gf_add(term1, term2), term3)
     print(f"L(a^{root}) = a^{LOG_A[value]} {'✓' if value == 0 else '✗'}")
