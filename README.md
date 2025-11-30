@@ -4,7 +4,7 @@
 
 Используется фамилия "Зайцева"
 
-https://disk.yandex.ru/i/6KfO1sobfEp8Mw
-https://disk.yandex.ru/d/OGlctLk7H_Xxtg
+1. https://disk.yandex.ru/i/6KfO1sobfEp8Mw
+2. https://disk.yandex.ru/d/OGlctLk7H_Xxtg
 
 код "sum" отвечает за складывание до 4 двоичных слагаемых
