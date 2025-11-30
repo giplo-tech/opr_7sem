@@ -3,6 +3,7 @@
 В примере приводятся расчеты для алфавита без Ё и Ъ.
 
 Используется фамилия "Зайцева"
+
 https://disk.yandex.ru/i/6KfO1sobfEp8Mw
 https://disk.yandex.ru/d/OGlctLk7H_Xxtg
 
