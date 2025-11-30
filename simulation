@@ -1,0 +1,422 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from math import erfc
+
+class GF32:
+    def __init__(self):
+        self.primitive_poly = 0b111011
+        self.n = 5
+        self.q = 32
+        self.alpha = 2
+        self._build_tables()
+
+    def _build_tables(self):
+        self.exp_table = [0] * (2 * self.q)
+        self.log_table = [0] * self.q
+
+        x = 1
+        for i in range(self.q - 1):
+            self.exp_table[i] = x
+            if x < self.q:
+                self.log_table[x] = i
+            x <<= 1
+            if x & (1 << self.n):
+                x ^= self.primitive_poly
+
+        for i in range(self.q - 1, 2 * (self.q - 1)):
+            self.exp_table[i] = self.exp_table[i - (self.q - 1)]
+
+        self.exp_table[self.q - 1] = 1
+        self.log_table[0] = -1
+
+    def mul(self, a, b):
+        if a == 0 or b == 0:
+            return 0
+        a_idx = self.log_table[a]
+        b_idx = self.log_table[b]
+        return self.exp_table[a_idx + b_idx]
+
+    def div(self, a, b):
+        if a == 0:
+            return 0
+        if b == 0:
+            return 0
+        a_idx = self.log_table[a]
+        b_idx = self.log_table[b]
+        return self.exp_table[(a_idx - b_idx + (self.q - 1)) % (self.q - 1)]
+
+    def add(self, a, b):
+        return a ^ b
+
+    def pow(self, a, n):
+        if n == 0:
+            return 1
+        if a == 0:
+            return 0
+        a_idx = self.log_table[a]
+        return self.exp_table[(a_idx * n) % (self.q - 1)]
+
+    def poly_mul(self, p1, p2):
+        deg1 = len(p1) - 1
+        deg2 = len(p2) - 1
+        result = [0] * (deg1 + deg2 + 1)
+
+        for i in range(deg1 + 1):
+            if p1[i] != 0:
+                for j in range(deg2 + 1):
+                    if p2[j] != 0:
+                        result[i + j] = self.add(result[i + j], self.mul(p1[i], p2[j]))
+        return result
+
+    def poly_div(self, dividend, divisor):
+        dividend = dividend.copy()
+        divisor_deg = len(divisor) - 1
+
+        if len(dividend) < len(divisor):
+            return [0], dividend
+
+        quotient = [0] * (len(dividend) - divisor_deg)
+
+        for i in range(len(quotient)):
+            if dividend[i] != 0:
+                factor = self.div(dividend[i], divisor[0])
+                quotient[i] = factor
+
+                for j in range(len(divisor)):
+                    if divisor[j] != 0:
+                        dividend[i + j] = self.add(dividend[i + j], self.mul(factor, divisor[j]))
+
+        remainder = dividend[len(quotient):]
+        while remainder and remainder[0] == 0:
+            remainder = remainder[1:]
+
+        return quotient, remainder
+
+class ReedSolomon:
+    def __init__(self, n=15, k=11):
+        self.n = n
+        self.k = k
+        self.t = (n - k) // 2
+        self.gf = GF32()
+
+        alpha = self.gf.alpha
+        self.g_poly = [
+            1,
+            self.gf.pow(alpha, 9),
+            self.gf.pow(alpha, 8),
+            self.gf.pow(alpha, 14),
+            self.gf.pow(alpha, 10)
+        ]
+
+    def encode(self, message):
+        if len(message) != self.k:
+            raise ValueError(f"Длина сообщения должна быть {self.k}")
+
+        msg_poly = message + [0] * (self.n - self.k)
+        quotient, remainder = self.gf.poly_div(msg_poly, self.g_poly)
+
+        if len(remainder) < (self.n - self.k):
+            remainder = [0] * ((self.n - self.k) - len(remainder)) + remainder
+
+        codeword = message + remainder
+        return codeword
+
+    def decode(self, received):
+        syndromes = self._calculate_syndromes(received)
+
+        if all(s == 0 for s in syndromes):
+            return received[:self.k]
+
+        error_locator = self._find_error_locator(syndromes)
+        error_positions = self._find_error_positions(error_locator)
+
+        if len(error_positions) == 0 or len(error_positions) > self.t:
+            return received[:self.k]
+
+        error_magnitudes = self._find_error_magnitudes(syndromes, error_locator, error_positions)
+
+        corrected = received.copy()
+        for pos, magnitude in zip(error_positions, error_magnitudes):
+            if 0 <= pos < len(corrected):
+                corrected[pos] = self.gf.add(corrected[pos], magnitude)
+
+        return corrected[:self.k]
+
+    def _calculate_syndromes(self, received):
+        syndromes = [0] * (2 * self.t)
+        for i in range(1, 2 * self.t + 1):
+            for j in range(self.n):
+                syndromes[i - 1] = self.gf.add(syndromes[i - 1], 
+                                             self.gf.mul(received[j], 
+                                                       self.gf.pow(self.gf.alpha, i * j)))
+        return syndromes
+
+    def _find_error_locator(self, syndromes):
+        if all(s == 0 for s in syndromes):
+            return [1]
+            
+        if len(syndromes) >= 4:
+            S1, S2, S3, S4 = syndromes[0], syndromes[1], syndromes[2], syndromes[3]
+            
+            det1 = self.gf.add(self.gf.mul(S1, S3), self.gf.mul(S2, S2))
+            det2 = self.gf.add(self.gf.mul(S2, S3), self.gf.mul(S1, S4))
+            
+            if det1 != 0:
+                sigma2 = self.gf.div(det2, det1)
+                sigma1 = self.gf.div(self.gf.add(S2, self.gf.mul(sigma2, S1)), S1)
+                return [1, sigma1, sigma2]
+        
+        if syndromes[0] != 0:
+            sigma1 = self.gf.div(syndromes[1], syndromes[0])
+            return [1, sigma1]
+            
+        return [1]
+
+    def _find_error_positions(self, error_locator):
+        error_positions = []
+        for i in range(self.n):
+            x = self.gf.pow(self.gf.alpha, -i)
+            result = 0
+            power = 1
+            for coef in error_locator:
+                result = self.gf.add(result, self.gf.mul(coef, power))
+                power = self.gf.mul(power, x)
+
+            if result == 0:
+                error_positions.append(i)
+
+        return error_positions
+
+    def _find_error_magnitudes(self, syndromes, error_locator, error_positions):
+        if len(error_positions) == 1:
+            pos = error_positions[0]
+            X = self.gf.pow(self.gf.alpha, pos)
+            magnitude = self.gf.div(syndromes[0], X)
+            return [magnitude]
+
+        elif len(error_positions) == 2:
+            X1 = self.gf.pow(self.gf.alpha, error_positions[0])
+            X2 = self.gf.pow(self.gf.alpha, error_positions[1])
+
+            denominator = self.gf.mul(X1, self.gf.add(X1, X2))
+            denominator = self.gf.mul(denominator, X2)
+
+            if denominator == 0:
+                return [0, 0]
+
+            Y1 = self.gf.div(self.gf.add(self.gf.mul(syndromes[0], X2), 
+                                       syndromes[1]), denominator)
+            Y2 = self.gf.div(self.gf.add(self.gf.mul(syndromes[0], X1), 
+                                       syndromes[1]), denominator)
+
+            return [Y1, Y2]
+
+        return [0] * len(error_positions)
+
+def text_to_gf32_symbols(text):
+    russian_to_gf = {
+        'А': 1, 'Б': 2, 'Г': 4, 'З': 8, 'П': 16,
+        'Ы': 27, 'М': 13, 'Щ': 26, 'О': 15, 'Ю': 30,
+        'Ж': 7, 'Н': 14, 'Ь': 28, 'В': 3, 'Е': 6,
+        'Л': 12, 'Ч': 24, 'К': 11, 'Х': 22, 'Ц': 23,
+        'Ф': 21, 'Р': 17, 'Ш': 25, 'И': 9, 'С': 18,
+        'Я': 31, 'Д': 5, 'Й': 10, 'У': 20, 'Т': 19,
+        'Э': 29
+    }
+    
+    symbols = []
+    for char in text.upper():
+        if char in russian_to_gf:
+            symbols.append(russian_to_gf[char])
+        else:
+            symbols.append(0)
+    return symbols
+
+def gf32_symbols_to_text(symbols):
+    gf_to_russian = {
+        1: 'А', 2: 'Б', 4: 'Г', 8: 'З', 16: 'П',
+        27: 'Ы', 13: 'М', 26: 'Щ', 15: 'О', 30: 'Ю',
+        7: 'Ж', 14: 'Н', 28: 'Ь', 3: 'В', 6: 'Е',
+        12: 'Л', 24: 'Ч', 11: 'К', 22: 'Х', 23: 'Ц',
+        21: 'Ф', 17: 'Р', 25: 'Ш', 9: 'И', 18: 'С',
+        31: 'Я', 5: 'Д', 10: 'Й', 20: 'У', 19: 'Т',
+        29: 'Э'
+    }
+    
+    text = ""
+    for num in symbols:
+        if num in gf_to_russian:
+            text += gf_to_russian[num]
+        else:
+            text += '?'
+    return text
+
+def simulate_surname_transmission(surname, snr_db_values, num_trials=500):
+    rs = ReedSolomon()
+    
+    surname_symbols = text_to_gf32_symbols(surname)
+    print(f"Фамилия: {surname}")
+    print(f"Символы GF(32): {surname_symbols}")
+    print(f"Текст из символов: {gf32_symbols_to_text(surname_symbols)}")
+    
+    if len(surname_symbols) < 11:
+        message_symbols = surname_symbols + [0] * (11 - len(surname_symbols))
+    else:
+        message_symbols = surname_symbols[:11]
+    
+    success_rate_uncoded = []
+    success_rate_coded = []
+    ber_uncoded = []
+    ber_coded = []
+
+    for snr_db in snr_db_values:
+        snr_linear = 10 ** (snr_db / 10)
+        pe_bit = 0.5 * erfc(np.sqrt(snr_linear))
+        
+        successful_uncoded = 0
+        successful_coded = 0
+        total_errors_uncoded = 0
+        total_errors_coded = 0
+        total_bits = 0
+
+        for _ in range(num_trials):
+            data_bits = []
+            for symbol in message_symbols:
+                symbol_bits = format(symbol, '05b')
+                data_bits.extend(list(map(int, symbol_bits)))
+            data_bits = np.array(data_bits)
+            
+            received_uncoded = data_bits.copy()
+            errors_in_trial_uncoded = 0
+            for i in range(len(received_uncoded)):
+                if np.random.random() < pe_bit:
+                    received_uncoded[i] = 1 - received_uncoded[i]
+                    errors_in_trial_uncoded += 1
+            
+            received_symbols_uncoded = []
+            for i in range(0, len(received_uncoded), 5):
+                symbol_bits = received_uncoded[i:i+5]
+                symbol_value = int(''.join(map(str, symbol_bits)), 2)
+                received_symbols_uncoded.append(symbol_value)
+            
+            if received_symbols_uncoded == message_symbols:
+                successful_uncoded += 1
+            
+            total_errors_uncoded += errors_in_trial_uncoded
+            
+            codeword = rs.encode(message_symbols)
+            
+            received_codeword = codeword.copy()
+            errors_in_trial_coded = 0
+            for i in range(len(received_codeword)):
+                symbol_bits = format(received_codeword[i], '05b')
+                received_bits = list(map(int, symbol_bits))
+                
+                for j in range(5):
+                    if np.random.random() < pe_bit:
+                        received_bits[j] = 1 - received_bits[j]
+                        errors_in_trial_coded += 1
+                
+                received_codeword[i] = int(''.join(map(str, received_bits)), 2)
+            
+            decoded_symbols = rs.decode(received_codeword)
+            
+            if decoded_symbols == message_symbols:
+                successful_coded += 1
+            
+            decoded_bits = []
+            for symbol in decoded_symbols:
+                symbol_bits = format(symbol, '05b')
+                decoded_bits.extend(list(map(int, symbol_bits)))
+            
+            for i in range(len(data_bits)):
+                if decoded_bits[i] != data_bits[i]:
+                    total_errors_coded += 1
+            
+            total_bits += len(data_bits)
+
+        success_rate_uncoded.append(successful_uncoded / num_trials)
+        success_rate_coded.append(successful_coded / num_trials)
+        ber_uncoded.append(total_errors_uncoded / total_bits)
+        ber_coded.append(total_errors_coded / total_bits)
+
+    return (success_rate_uncoded, success_rate_coded, 
+            ber_uncoded, ber_coded, message_symbols)
+
+def plot_surname_results(snr_db_values, success_uncoded, success_coded, 
+                        ber_uncoded, ber_coded, surname):
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+    
+    ax1.plot(snr_db_values, success_uncoded, 'bo-', linewidth=2, 
+             markersize=6, label='Без кодирования')
+    ax1.plot(snr_db_values, success_coded, 'ro-', linewidth=2, 
+             markersize=6, label='С кодом РС(15,11)')
+    ax1.set_xlabel('Отношение сигнал/шум (дБ)')
+    ax1.set_ylabel('Вероятность успешной передачи')
+    ax1.set_title(f'Передача фамилии: {surname}')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend()
+    ax1.set_ylim(0, 1.1)
+    
+    ax2.semilogy(snr_db_values, ber_uncoded, 'bo-', linewidth=2, 
+                 markersize=6, label='Без кодирования')
+    ax2.semilogy(snr_db_values, ber_coded, 'ro-', linewidth=2, 
+                 markersize=6, label='С кодом РС(15,11)')
+    ax2.set_xlabel('Отношение сигнал/шум (дБ)')
+    ax2.set_ylabel('Вероятность битовой ошибки (BER)')
+    ax2.set_title('Битовая ошибка при передаче')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend()
+    
+    plt.tight_layout()
+    plt.show()
+
+def print_detailed_statistics(snr_db_values, success_uncoded, success_coded, 
+                             ber_uncoded, ber_coded, surname, original_symbols):
+    
+    print("=" * 70)
+    print(f"СТАТИСТИКА ПЕРЕДАЧИ ФАМИЛИИ: {surname}")
+    print("=" * 70)
+    print(f"Оригинальные символы: {original_symbols}")
+    print(f"Восстановленный текст: {gf32_symbols_to_text(original_symbols)}")
+    print("\nРезультаты моделирования:")
+    print("ОСШ | Успех без кодир. | Успех с кодир. | BER без кодир. | BER с кодир.")
+    print("-" * 85)
+    
+    for i, snr in enumerate(snr_db_values):
+        print(f"{snr:3.1f} | {success_uncoded[i]:15.3f} | {success_coded[i]:14.3f} | "
+              f"{ber_uncoded[i]:14.2e} | {ber_coded[i]:12.2e}")
+
+if __name__ == "__main__":
+    your_surname = "ЗАЙЦЕВА"
+    
+    snr_db_range = np.linspace(0, 12, 13)
+    
+    print("Моделирование передачи фамилии через канал с шумом")
+    print("=" * 50)
+    print("Параметры системы:")
+    print("- Примитивный полином: x^5 + x^4 + x^3 + x + 1")
+    print("- Порождающий полином: g(x) = x^4 + a^9 x^3 + a^8 x^2 + a^14 x + a^10")
+    print("- Код: РС(15,11)")
+    print("=" * 50)
+    
+    (success_uncoded, success_coded, 
+     ber_uncoded, ber_coded, original_symbols) = simulate_surname_transmission(
+        your_surname, snr_db_range, num_trials=500)
+    
+    print_detailed_statistics(snr_db_range, success_uncoded, success_coded,
+                             ber_uncoded, ber_coded, your_surname, original_symbols)
+    
+    plot_surname_results(snr_db_range, success_uncoded, success_coded,
+                        ber_uncoded, ber_coded, your_surname)
+    
+    print("\n" + "=" * 70)
+    print("АНАЛИЗ ВЫИГРЫША ОТ КОДИРОВАНИЯ:")
+    print("=" * 70)
+    
+    for i, snr in enumerate(snr_db_range):
+        gain = success_coded[i] - success_uncoded[i]
+        ber_reduction = ber_uncoded[i] - ber_coded[i]
+        print(f"ОСШ {snr:3.1f} дБ: Выигрыш в успешности = {gain:+.3f}, "
+              f"Снижение BER = {ber_reduction:.2e}")
